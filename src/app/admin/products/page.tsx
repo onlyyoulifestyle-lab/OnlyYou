@@ -12,7 +12,7 @@ export default function ProductManager() {
   const [viewProduct, setViewProduct] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-
+const [isActive, setIsActive] = useState(true);
   // --- Form State ---
   const [editingId, setEditingId] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
@@ -80,7 +80,7 @@ export default function ProductManager() {
     setSubId(product.sub_category_id || "");
     setInnerId(product.inner_category_id || "");
     setExistingImages(product.gallery_urls || []);
-
+setIsActive(product.is_active ?? true);
     if (product.product_variants?.length > 0) {
       setVariants(product.product_variants.map((v: any) => ({
         size: v.size || "",
@@ -124,14 +124,16 @@ export default function ProductManager() {
         }
       }
 
-      const payload = {
-        name, description,
-        category_id: catId || null,
-        sub_category_id: subId || null,
-        inner_category_id: innerId || null,
-        thumbnail_url: finalGallery[0] || "", // First image as thumbnail
-        gallery_urls: finalGallery
-      };
+    const payload = {
+  name,
+  description,
+  category_id: catId || null,
+  sub_category_id: subId || null,
+  inner_category_id: innerId || null,
+  thumbnail_url: finalGallery[0] || "",
+  gallery_urls: finalGallery,
+  is_active: isActive   // ✅ ADD THIS LINE
+};
 
       const { data: pData, error } = editingId
         ? await supabase.from('products').update(payload).eq('id', editingId).select().single()
@@ -184,14 +186,44 @@ export default function ProductManager() {
               <img src={product.thumbnail_url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt="" />
 
               {/* Action Buttons Overlay */}
-              <div className="absolute top-3 right-3 flex flex-col gap-2">
-                <button onClick={(e) => startEditing(product, e)} className="p-3 bg-white/90 backdrop-blur rounded-xl text-slate-900 hover:bg-black hover:text-white transition-all shadow-md">
-                  <Edit3 size={16} />
-                </button>
-                <button onClick={(e) => handleDeleteProduct(product.id, e)} className="p-3 bg-white/90 backdrop-blur rounded-xl text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-md">
-                  <Trash2 size={16} />
-                </button>
-              </div>
+             <div className="absolute top-3 right-3 flex flex-col gap-2">
+
+  {/* ✅ ACTIVE / INACTIVE TOGGLE */}
+  <button
+    onClick={async (e) => {
+      e.stopPropagation();
+      await supabase
+        .from('products')
+        .update({ is_active: !product.is_active })
+        .eq('id', product.id);
+      fetchProducts();
+    }}
+    className={`p-3 rounded-xl shadow-md transition-all ${
+      product.is_active
+        ? "bg-green-100 text-green-600"
+        : "bg-gray-200 text-gray-500"
+    }`}
+  >
+    {product.is_active ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+  </button>
+
+  {/* EDIT */}
+  <button
+    onClick={(e) => startEditing(product, e)}
+    className="p-3 bg-white rounded-xl shadow-md"
+  >
+    <Edit3 size={16} />
+  </button>
+
+  {/* DELETE */}
+  <button
+    onClick={(e) => handleDeleteProduct(product.id, e)}
+    className="p-3 bg-white rounded-xl text-red-500 shadow-md"
+  >
+    <Trash2 size={16} />
+  </button>
+
+</div>
 
             </div>
             <div className="pt-6 pb-2 space-y-2">
@@ -202,6 +234,13 @@ export default function ProductManager() {
                 <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase ${product.product_variants?.[0]?.stock > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                   Stock: {product.product_variants?.[0]?.stock || 0}
                 </span>
+                <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase ${
+  product.is_active
+    ? "bg-green-100 text-green-600"
+    : "bg-gray-200 text-gray-500"
+}`}>
+  {product.is_active ? "Active" : "Inactive"}
+</span>
               </div>
             </div>
           </div>

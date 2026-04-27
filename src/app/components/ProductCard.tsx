@@ -16,7 +16,12 @@ export default function ProductCardSmall({ product, user }: { product: any, user
     }
     const checkWishlistStatus = async () => {
       if (user) {
-        const { data } = await supabase.from('wishlist').select('id').eq('user_id', user.id).eq('product_id', product.id).maybeSingle();
+        const { data } = await supabase
+          .from('wishlist')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('product_id', product.id)
+          .maybeSingle();
         if (data) setIsWishlisted(true);
       }
     };
@@ -49,21 +54,21 @@ export default function ProductCardSmall({ product, user }: { product: any, user
     if (selectedVariant.stock <= 0) return toast.error("Sold Out");
 
     setLoading(true);
-    const { error } = await supabase.from('cart').insert([{ 
+    const { error } = await supabase.from('cart').insert([{
       product_id: product.id, user_id: user.id, quantity: 1,
-      variant_id: selectedVariant.id, size: `${selectedVariant.size}${selectedVariant.unit || ''}` 
+      variant_id: selectedVariant.id, size: `${selectedVariant.size}${selectedVariant.unit || ''}`
     }]);
 
     if (error) toast.error("Error adding to bag");
     else toast.success("Added", { description: `${product.name} (${selectedVariant.size}${selectedVariant.unit || ''})` });
     setLoading(false);
   };
-
+if (!product.is_active) return null;
   if (!selectedVariant) return null;
 
   return (
     <div className="group relative bg-white border border-slate-100 rounded-[1.8rem] overflow-hidden transition-all duration-500 hover:shadow-xl hover:-translate-y-1 max-w-[210px]">
-      
+
       {/* 1. COMPACT IMAGE SECTION */}
       <div className="relative aspect-[1/1.2] overflow-hidden bg-[#fafafa]">
         <Link href={`/site/products/${product.id}`}>

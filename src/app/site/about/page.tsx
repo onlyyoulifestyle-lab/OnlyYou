@@ -12,7 +12,7 @@ export default function AboutPage() {
     setLoading(true);
 
     const formData = new FormData(e.target as HTMLFormElement);
-    
+
     try {
       const { error } = await supabase
         .from('contact_messages')
@@ -37,24 +37,24 @@ export default function AboutPage() {
 
   return (
     <div className="bg-white">
-    {/* BRAND HERO SECTION - Compact & Clear */}
+      {/* BRAND HERO SECTION - Compact & Clear */}
       <section className="relative h-[40vh] md:h-[50vh] flex items-center justify-center overflow-hidden bg-slate-50">
         <div className="absolute inset-0 z-0">
-          <img 
-            src="https://images.unsplash.com/photo-1556228720-195a672e8a03?q=80&w=2000" 
-            className="w-full h-full object-cover" // Removed opacity and grayscale
+          <img
+            src="/banneronlyyou11.jpeg"
+            className="w-full h-full object-cover"
             alt="Only You Lifestyle"
           />
           {/* Subtle overlay just to make sure white text is readable if needed */}
-          <div className="absolute inset-0 bg-black/10"></div> 
+          <div className="absolute inset-0 bg-black/10"></div>
         </div>
-        
+
         <div className="relative z-10 text-center px-6">
           <p className="text-[10px] font-black uppercase tracking-[0.5em] text-white drop-shadow-md mb-3">
             Established 2024
           </p>
           <h1 className="text-5xl md:text-7xl font-[1000] text-white uppercase tracking-tighter leading-[0.9] drop-shadow-xl">
-            ONLY YOU <br /> 
+            ONLY YOU <br />
             <span className="text-rose-400 font-light">LIFESTYLE</span>
           </h1>
           <p className="mt-4 text-[10px] md:text-xs font-bold text-white tracking-[0.2em] uppercase drop-shadow-md">
@@ -68,16 +68,16 @@ export default function AboutPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-24 items-center">
           <div className="relative">
             <div className="aspect-[4/5] rounded-[4rem] overflow-hidden shadow-2xl transform -rotate-2">
-              <img 
-                src="https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?q=80&w=1000" 
+              <img
+                src="/banneronlyyou4.jpeg"
                 alt="Product detail"
                 className="w-full h-full object-cover hover:scale-110 transition-transform duration-1000"
               />
             </div>
             <div className="absolute -bottom-10 -right-10 bg-black text-white p-10 rounded-[3rem] shadow-2xl hidden md:block">
-               <Star className="text-rose-400 mb-4 fill-rose-400" size={32} />
-               <p className="text-3xl font-[1000]">SEOUL</p>
-               <p className="text-[10px] font-black uppercase tracking-widest text-rose-400">Directly Sourced</p>
+              <Star className="text-rose-400 mb-4 fill-rose-400" size={32} />
+              <p className="text-3xl font-[1000]">SEOUL</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-rose-400">Directly Sourced</p>
             </div>
           </div>
 
@@ -90,7 +90,7 @@ export default function AboutPage() {
                 "Skincare is not a routine at Only You Lifestyle; it is an intimate conversation between you and your reflection."
               </p>
               <p>
-                We founded <span className="font-black text-black">Only You Lifestyle</span> to bridge the gap between South Korea’s skincare innovation and the unique environmental challenges faced by the modern Indian individual. 
+                We founded <span className="font-black text-black">Only You Lifestyle</span> to bridge the gap between South Korea’s skincare innovation and the unique environmental challenges faced by the modern Indian individual.
               </p>
               <p>
                 Every product in our collection is hand-selected from Seoul’s most prestigious laboratories, ensuring that the legendary "Glass Skin" glow is accessible, authentic, and optimized for your lifestyle.
@@ -121,12 +121,12 @@ export default function AboutPage() {
       <section className="bg-slate-50 py-24 rounded-[4rem] mx-4 mb-10">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-20">
-            
+
             {/* Brand Contact Info */}
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.4em] text-rose-500 mb-3">Concierge</p>
-              <h2 className="text-5xl font-[1000] uppercase tracking-tighter mb-12">Connect with <br/>Only You <span className="text-slate-300 font-light">Lifestyle</span></h2>
-              
+              <h2 className="text-5xl font-[1000] uppercase tracking-tighter mb-12">Connect with <br />Only You <span className="text-slate-300 font-light">Lifestyle</span></h2>
+
               <div className="space-y-10">
                 <div className="flex items-center gap-6 group">
                   <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 group-hover:bg-black group-hover:text-white transition-all">
@@ -182,8 +182,8 @@ export default function AboutPage() {
                   <label className="text-[9px] font-black uppercase tracking-widest ml-1 text-slate-400">Message</label>
                   <textarea name="message" required rows={4} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 ring-rose-100 transition-all" placeholder="How can we assist your glow journey?"></textarea>
                 </div>
-                
-                <button 
+
+                <button
                   disabled={loading}
                   className="w-full py-5 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] shadow-xl hover:bg-zinc-800 transition-all flex items-center justify-center gap-3 disabled:bg-slate-300"
                 >

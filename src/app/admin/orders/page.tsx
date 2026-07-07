@@ -1,16 +1,27 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import { supabase } from "../../../lib/supabase";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
-  Package, Search, Eye, CheckCircle2, Truck, Loader2, X, ShoppingBag,
-  TrendingUp, Calendar, Hash, IndianRupee, User
+  Package, Search, Eye, Loader2, X, ShoppingBag,
+  TrendingUp, Calendar, Hash, IndianRupee, User, ChevronDown, Download
 } from 'lucide-react';
+
+const STATUS_OPTIONS = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'out_for_delivery', label: 'Out for Delivery' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [emailSendingId, setEmailSendingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOrders();
@@ -27,6 +38,39 @@ export default function AdminOrders() {
     setLoading(false);
   }
 
+  // Sends the status-change notification email via our API route.
+  // The route looks up the customer's email server-side from Supabase Auth
+  // using order.user_id, since the orders table itself has no email column.
+  const sendStatusEmail = async (order: any, newStatus: string) => {
+    if (!order.user_id) {
+      console.warn(`No user_id found on order ${order.id}, skipping notification.`);
+      return;
+    }
+
+    try {
+      setEmailSendingId(order.id);
+      const res = await fetch('/api/notify-order-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: order.user_id,
+          orderId: order.id,
+          status: newStatus,
+          totalAmount: order.total_amount,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error('Status email failed:', data.error || res.statusText);
+      }
+    } catch (err) {
+      console.error('Failed to send status email:', err);
+    } finally {
+      setEmailSendingId(null);
+    }
+  };
+
   const updateStatus = async (orderId: string, newStatus: string) => {
     const { error } = await supabase
       .from('orders')
@@ -34,9 +78,16 @@ export default function AdminOrders() {
       .eq('id', orderId);
 
     if (!error) {
+      const updatedOrder = orders.find(o => o.id === orderId);
+
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
       if (selectedOrder?.id === orderId) {
         setSelectedOrder({ ...selectedOrder, status: newStatus });
+      }
+
+      // Fire the email notification after a successful status update
+      if (updatedOrder) {
+        sendStatusEmail(updatedOrder, newStatus);
       }
     }
   };
@@ -44,11 +95,105 @@ export default function AdminOrders() {
   const getStatusStyle = (status: string) => {
     switch (status?.toLowerCase()) {
       case 'completed': return 'bg-emerald-50 text-emerald-600 border-emerald-100';
-      case 'shipped': return 'bg-blue-50 text-blue-600 border-blue-100';
+      case 'out_for_delivery': return 'bg-blue-50 text-blue-600 border-blue-100';
+      case 'confirmed': return 'bg-indigo-50 text-indigo-600 border-indigo-100';
       case 'pending': return 'bg-amber-50 text-amber-600 border-amber-100';
       case 'cancelled': return 'bg-rose-50 text-rose-600 border-rose-100';
       default: return 'bg-slate-50 text-slate-600 border-slate-100';
     }
+  };
+
+  const formatStatusLabel = (status: string) => {
+    const match = STATUS_OPTIONS.find(s => s.value === status?.toLowerCase());
+    return match ? match.label : status;
+  };
+
+  // Builds and downloads a PDF invoice for the given order.
+  const downloadInvoice = (order: any) => {
+    const doc = new jsPDF();
+    const shortId = order.id.slice(0, 8).toUpperCase();
+    const orderDate = new Date(order.created_at).toLocaleDateString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+
+    // --- Header ---
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('OnlyYou Lifestyle', 14, 20);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120);
+    doc.text('onlyyoulifestyle@gmail.com', 14, 26);
+
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.setFont('helvetica', 'bold');
+    doc.text('INVOICE', 196, 20, { align: 'right' });
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120);
+    doc.text(`#${shortId}`, 196, 26, { align: 'right' });
+
+    doc.setDrawColor(230);
+    doc.line(14, 32, 196, 32);
+
+    // --- Order meta ---
+    doc.setFontSize(10);
+    doc.setTextColor(0);
+    doc.text(`Order Date: ${orderDate}`, 14, 40);
+    doc.text(`Status: ${formatStatusLabel(order.status)}`, 14, 46);
+    doc.text(`Customer ID: ${order.user_id}`, 14, 52);
+
+    // --- Shipping address (only if present on the order) ---
+    let tableStartY = 60;
+    if (order.shipping_address && Object.keys(order.shipping_address).length > 0) {
+      const addr = order.shipping_address;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Ship To:', 130, 40);
+      doc.setFont('helvetica', 'normal');
+      const addressLines = [
+        addr.full_name,
+        addr.phone,
+        addr.address_line1,
+        addr.address_line2,
+        [addr.city, addr.state, addr.pincode].filter(Boolean).join(', '),
+      ].filter(Boolean);
+      doc.text(addressLines, 130, 46);
+      tableStartY = 46 + addressLines.length * 5 + 10;
+    }
+
+    // --- Items table ---
+    const rows = (order.items || []).map((item: any) => {
+      const name = item.name || item.products?.name || 'Item';
+      const qty = item.quantity || 1;
+      const price = item.price || item.mrp || 0;
+      return [name, item.variant || item.size || 'Standard', String(qty), `Rs. ${Number(price).toLocaleString()}`, `Rs. ${(price * qty).toLocaleString()}`];
+    });
+
+    autoTable(doc, {
+      startY: tableStartY,
+      head: [['Item', 'Variant', 'Qty', 'Unit Price', 'Total']],
+      body: rows,
+      theme: 'striped',
+      headStyles: { fillColor: [15, 23, 42], fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      margin: { left: 14, right: 14 },
+    });
+
+    // --- Totals ---
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total Amount:', 140, finalY);
+    doc.text(`Rs. ${Number(order.total_amount).toLocaleString()}`, 196, finalY, { align: 'right' });
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(150);
+    doc.text('Thank you for shopping with OnlyYou Lifestyle.', 14, finalY + 20);
+
+    doc.save(`Invoice-${shortId}.pdf`);
   };
 
   const filteredOrders = orders.filter(order =>
@@ -119,7 +264,7 @@ export default function AdminOrders() {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {loading ? (
-                <tr><td colSpan={5} className="p-32 text-center"><Loader2 className="animate-spin mx-auto text-rose-500" size={40} /></td></tr>
+                <tr><td colSpan={4} className="p-32 text-center"><Loader2 className="animate-spin mx-auto text-rose-500" size={40} /></td></tr>
               ) : filteredOrders.map((order) => (
                 <tr key={order.id} className="hover:bg-slate-50/50 transition-all group">
                   <td className="p-8">
@@ -139,19 +284,47 @@ export default function AdminOrders() {
                   <td className="p-8 font-[1000] text-sm text-slate-900">₹{Number(order.total_amount).toLocaleString()}</td>
                   <td className="p-8">
                     <span className={`px-5 py-2 rounded-full text-[9px] font-[1000] uppercase tracking-widest border shadow-sm ${getStatusStyle(order.status)}`}>
-                      {order.status}
+                      {formatStatusLabel(order.status)}
                     </span>
                   </td>
                   <td className="p-8 text-right">
-                    <div className="flex justify-end gap-3">
-                      <button onClick={() => updateStatus(order.id, 'shipped')} className="w-10 h-10 flex items-center justify-center text-blue-500 bg-blue-50 rounded-2xl hover:bg-blue-500 hover:text-white transition-all shadow-sm"><Truck size={16} /></button>
-                      <button onClick={() => updateStatus(order.id, 'completed')} className="w-10 h-10 flex items-center justify-center text-emerald-500 bg-emerald-50 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all shadow-sm"><CheckCircle2 size={16} /></button>
+                    <div className="flex justify-end items-center gap-3">
+                      {/* --- STATUS DROPDOWN --- */}
+                      <div className="relative">
+                        <select
+                          value={order.status}
+                          onChange={(e) => updateStatus(order.id, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          disabled={emailSendingId === order.id}
+                          className={`appearance-none cursor-pointer h-10 pl-4 pr-9 rounded-2xl text-[9px] font-[1000] uppercase tracking-widest border shadow-sm outline-none transition-all disabled:opacity-50 ${getStatusStyle(order.status)}`}
+                        >
+                          {STATUS_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={12}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 opacity-60"
+                        />
+                      </div>
+
+                      {/* --- DOWNLOAD INVOICE BUTTON --- */}
+                      <button
+                        onClick={() => downloadInvoice(order)}
+                        title="Download Invoice"
+                        className="w-10 h-10 flex items-center justify-center text-slate-500 bg-slate-100 rounded-2xl hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                      >
+                        <Download size={16} />
+                      </button>
+
                       <button
                         onClick={() => setSelectedOrder(order)}
                         className="h-10 px-6 flex items-center justify-center gap-2 text-white bg-black rounded-2xl hover:bg-rose-500 transition-all shadow-lg active:scale-95"
                       >
                         <Eye size={14} />
-                        <span className="text-[9px] font-black uppercase tracking-widest">View Details</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest">View</span>
                       </button>
                     </div>
                   </td>
@@ -177,7 +350,7 @@ export default function AdminOrders() {
                     <Calendar size={12} /> {new Date(selectedOrder.created_at).toLocaleString()}
                   </div>
                   <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase border ${getStatusStyle(selectedOrder.status)}`}>
-                    {selectedOrder.status}
+                    {formatStatusLabel(selectedOrder.status)}
                   </div>
                 </div>
               </div>
@@ -259,22 +432,37 @@ export default function AdminOrders() {
                   <p className="text-3xl font-[1000] text-slate-900 tracking-tighter">₹{Number(selectedOrder.total_amount).toLocaleString()}</p>
                 </div>
               </div>
+
+              {/* --- DOWNLOAD INVOICE BUTTON (drawer) --- */}
+              <button
+                onClick={() => downloadInvoice(selectedOrder)}
+                className="w-full py-5 rounded-2xl bg-slate-50 border-2 border-slate-100 text-[10px] font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all shadow-sm flex items-center justify-center gap-3"
+              >
+                <Download size={16} /> Download Invoice
+              </button>
             </div>
 
-            {/* Drawer Footer Actions */}
-            <div className="p-10 bg-slate-50/50 flex gap-4">
-              <button
-                onClick={() => updateStatus(selectedOrder.id, 'cancelled')}
-                className="flex-1 py-5 rounded-[1.5rem] bg-white border-2 border-slate-100 text-[10px] font-black uppercase tracking-widest hover:bg-rose-50 hover:border-rose-100 hover:text-rose-500 transition-all shadow-sm"
-              >
-                Cancel Order
-              </button>
-              <button
-                onClick={() => updateStatus(selectedOrder.id, 'completed')}
-                className="flex-1 py-5 rounded-[1.5rem] bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 transition-all shadow-2xl active:scale-95"
-              >
-                Complete & Ship
-              </button>
+            {/* Drawer Footer Actions --- STATUS DROPDOWN --- */}
+            <div className="p-10 bg-slate-50/50">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3">Update Status</p>
+              <div className="relative">
+                <select
+                  value={selectedOrder.status}
+                  onChange={(e) => updateStatus(selectedOrder.id, e.target.value)}
+                  disabled={emailSendingId === selectedOrder.id}
+                  className={`w-full appearance-none cursor-pointer py-5 pl-6 pr-12 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest border-2 outline-none shadow-sm transition-all disabled:opacity-50 ${getStatusStyle(selectedOrder.status)}`}
+                >
+                  {STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={16}
+                  className="pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 opacity-60"
+                />
+              </div>
             </div>
           </div>
         </div>

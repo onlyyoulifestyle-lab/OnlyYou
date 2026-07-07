@@ -15,16 +15,35 @@ export default function Header() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [cartCount, setCartCount] = useState(0);
+  const [wishlistCount, setWishlistCount] = useState(0);
+
+  // Fetches the real cart & wishlist counts for the current user
+  const fetchCounts = async (userId: string) => {
+    const [{ count: cartCnt }, { count: wishlistCnt }] = await Promise.all([
+      supabase.from('cart').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      supabase.from('wishlist').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+    ]);
+    setCartCount(cartCnt || 0);
+    setWishlistCount(wishlistCnt || 0);
+  };
 
   useEffect(() => {
     // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
+      if (session?.user) fetchCounts(session.user.id);
     });
 
     // Listen for login/logout
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchCounts(session.user.id);
+      } else {
+        setCartCount(0);
+        setWishlistCount(0);
+      }
     });
 
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -35,6 +54,31 @@ export default function Header() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Keep counts live: re-fetch whenever cart or wishlist rows change for this user.
+  // This means if a product is added to the cart/wishlist from anywhere in the
+  // app (e.g. ProductCardSmall), the header badge updates instantly.
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`header-counts-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cart', filter: `user_id=eq.${user.id}` },
+        () => fetchCounts(user.id)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wishlist', filter: `user_id=eq.${user.id}` },
+        () => fetchCounts(user.id)
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -94,18 +138,20 @@ export default function Header() {
               <>
                 <Link href="/site/wishlist" className="relative group p-2 transition-all active:scale-90">
                   <Heart size={20} className="text-slate-800 group-hover:text-rose-500 transition-colors" />
-                  {/* You can replace '2' with a dynamic count from your database later */}
-                  <span className="absolute top-1 right-0 bg-rose-500 text-white text-[7px] font-black w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                    2
-                  </span>
+                  {wishlistCount > 0 && (
+                    <span className="absolute top-1 right-0 bg-rose-500 text-white text-[7px] font-black w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                      {wishlistCount > 9 ? '9+' : wishlistCount}
+                    </span>
+                  )}
                 </Link>
 
                 <Link href="/site/cart" className="relative group p-2 transition-all active:scale-90">
                   <ShoppingBag size={20} className="text-slate-800 group-hover:text-rose-600 transition-colors" />
-                  {/* You can replace '3' with a dynamic count from your database later */}
-                  <span className="absolute top-1 right-0 bg-black text-white text-[7px] font-black w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                    3
-                  </span>
+                  {cartCount > 0 && (
+                    <span className="absolute top-1 right-0 bg-black text-white text-[7px] font-black w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                      {cartCount > 9 ? '9+' : cartCount}
+                    </span>
+                  )}
                 </Link>
               </>
             )}

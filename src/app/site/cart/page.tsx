@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { supabase } from "../../../lib/supabase";
-import { ShoppingBag, Trash2, Plus, Minus, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
+import { ShoppingBag, Trash2, Plus, Minus, Loader2, ArrowRight, ShieldCheck, MapPin } from 'lucide-react';
 import { toast } from "sonner";
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -12,6 +12,17 @@ export default function CartPage() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // --- Shipping address form state ---
+  const [address, setAddress] = useState({
+    full_name: '',
+    phone: '',
+    address_line1: '',
+    address_line2: '',
+    city: '',
+    state: '',
+    pincode: '',
+  });
 
   useEffect(() => {
     fetchCart();
@@ -56,6 +67,15 @@ export default function CartPage() {
     }
   };
 
+  const handleAddressChange = (field: keyof typeof address, value: string) => {
+    setAddress(prev => ({ ...prev, [field]: value }));
+  };
+
+  const isAddressValid = () => {
+    const required = ['full_name', 'phone', 'address_line1', 'city', 'state', 'pincode'] as const;
+    return required.every((field) => address[field].trim().length > 0);
+  };
+
   // Calculations
   const subtotal = cartItems.reduce((acc, item) => {
     // Assuming you stored the price in the cart or need to fetch it from variants. 
@@ -67,21 +87,61 @@ export default function CartPage() {
   const shipping = subtotal > 1000 ? 0 : 99;
   const total = subtotal + gst + shipping;
 
+  // Fires off both the customer confirmation and shop-owner alert emails.
+  // Failures here are logged but never block the checkout flow.
+  const sendNewOrderEmails = async (orderId: string) => {
+    try {
+      const res = await fetch('/api/notify-new-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          userId: user.id,
+          totalAmount: total,
+          items: cartItems,
+          shippingAddress: address,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error('Order email failed:', data.error || res.statusText);
+      }
+    } catch (err) {
+      console.error('Failed to send order emails:', err);
+    }
+  };
+
   const handlePlaceOrder = async () => {
+    if (!isAddressValid()) {
+      toast.error("Please fill in your full shipping address");
+      return;
+    }
+
     setIsProcessing(true);
     try {
-      // 1. Create Order Logic (Simplified for now)
-      const { error: orderError } = await supabase.from('orders').insert([{
-        user_id: user.id,
-        total_amount: total,
-        status: 'pending',
-        items: cartItems
-      }]);
+      // 1. Create Order — select the inserted row back so we get its id
+      const { data: newOrder, error: orderError } = await supabase
+        .from('orders')
+        .insert([{
+          user_id: user.id,
+          total_amount: total,
+          status: 'pending',
+          items: cartItems,
+          shipping_address: address,
+        }])
+        .select()
+        .single();
 
       if (orderError) throw orderError;
 
       // 2. Clear Cart
       await supabase.from('cart').delete().eq('user_id', user.id);
+
+      // 3. Send confirmation email to customer + alert email to shop owner
+      if (newOrder?.id) {
+        sendNewOrderEmails(newOrder.id);
+      }
 
       toast.success("Order Placed Successfully!");
       router.push('/site/orders'); // Redirect to orders page
@@ -102,7 +162,7 @@ export default function CartPage() {
         </div>
         <h2 className="text-3xl font-[1000] uppercase tracking-tighter mb-4">Your Bag is Empty</h2>
         <p className="text-slate-400 mb-8 max-w-xs font-medium">Looks like you haven't added anything to your collection yet.</p>
-        <Link href="/site/shop" className="px-10 py-4 bg-black text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 transition-all">
+        <Link href="/site/products" className="px-10 py-4 bg-black text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 transition-all">
           Start Shopping
         </Link>
       </div>
@@ -117,35 +177,104 @@ export default function CartPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
-        {/* Left: Cart Items */}
-        <div className="lg:col-span-2 space-y-8">
-          {cartItems.map((item) => (
-            <div key={item.id} className="flex gap-6 pb-8 border-b border-slate-100 group">
-              <div className="w-32 h-40 bg-slate-50 rounded-3xl overflow-hidden flex-shrink-0">
-                <img src={item.products?.thumbnail_url} alt="" className="w-full h-full object-cover" />
-              </div>
-              <div className="flex-1 flex flex-col justify-between py-2">
-                <div>
-                  <div className="flex justify-between items-start">
-                    <h3 className="text-lg font-[1000] uppercase tracking-tighter">{item.products?.name}</h3>
-                    <button onClick={() => removeItem(item.id)} className="text-slate-300 hover:text-rose-500 transition-all">
-                        <Trash2 size={18} />
-                    </button>
-                  </div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Size: {item.size}</p>
-                </div>
+        {/* Left: Cart Items + Address */}
+        <div className="lg:col-span-2 space-y-16">
 
-                <div className="flex justify-between items-end">
-                  <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
-                    <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="text-slate-400 hover:text-black"><Minus size={14} /></button>
-                    <span className="text-xs font-black w-4 text-center">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="text-slate-400 hover:text-black"><Plus size={14} /></button>
-                  </div>
-                  <p className="text-lg font-[1000]">₹{(450 * item.quantity).toLocaleString()}</p>
+          {/* --- Cart Items --- */}
+          <div className="space-y-8">
+            {cartItems.map((item) => (
+              <div key={item.id} className="flex gap-6 pb-8 border-b border-slate-100 group">
+                <div className="w-32 h-40 bg-slate-50 rounded-3xl overflow-hidden flex-shrink-0">
+                  <img src={item.products?.thumbnail_url} alt="" className="w-full h-full object-cover" />
                 </div>
+                <div className="flex-1 flex flex-col justify-between py-2">
+                  <div>
+                    <div className="flex justify-between items-start">
+                      <h3 className="text-lg font-[1000] uppercase tracking-tighter">{item.products?.name}</h3>
+                      <button onClick={() => removeItem(item.id)} className="text-slate-300 hover:text-rose-500 transition-all">
+                          <Trash2 size={18} />
+                      </button>
+                    </div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Size: {item.size}</p>
+                  </div>
+
+                  <div className="flex justify-between items-end">
+                    <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
+                      <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="text-slate-400 hover:text-black"><Minus size={14} /></button>
+                      <span className="text-xs font-black w-4 text-center">{item.quantity}</span>
+                      <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="text-slate-400 hover:text-black"><Plus size={14} /></button>
+                    </div>
+                    <p className="text-lg font-[1000]">₹{(450 * item.quantity).toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* --- Shipping Address Form --- */}
+          <div>
+            <div className="flex items-center gap-3 mb-8">
+              <div className="p-3 bg-rose-50 rounded-2xl text-rose-500">
+                <MapPin size={18} />
+              </div>
+              <div>
+                <h3 className="text-xl font-[1000] uppercase tracking-tighter">Shipping Address</h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Where should we deliver your order?</p>
               </div>
             </div>
-          ))}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <input
+                type="text"
+                placeholder="Full Name"
+                value={address.full_name}
+                onChange={(e) => handleAddressChange('full_name', e.target.value)}
+                className="col-span-1 bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 text-sm font-medium focus:bg-white focus:border-slate-100 transition-all outline-none"
+              />
+              <input
+                type="tel"
+                placeholder="Phone Number"
+                value={address.phone}
+                onChange={(e) => handleAddressChange('phone', e.target.value)}
+                className="col-span-1 bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 text-sm font-medium focus:bg-white focus:border-slate-100 transition-all outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Address Line 1"
+                value={address.address_line1}
+                onChange={(e) => handleAddressChange('address_line1', e.target.value)}
+                className="md:col-span-2 bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 text-sm font-medium focus:bg-white focus:border-slate-100 transition-all outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Address Line 2 (optional)"
+                value={address.address_line2}
+                onChange={(e) => handleAddressChange('address_line2', e.target.value)}
+                className="md:col-span-2 bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 text-sm font-medium focus:bg-white focus:border-slate-100 transition-all outline-none"
+              />
+              <input
+                type="text"
+                placeholder="City"
+                value={address.city}
+                onChange={(e) => handleAddressChange('city', e.target.value)}
+                className="col-span-1 bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 text-sm font-medium focus:bg-white focus:border-slate-100 transition-all outline-none"
+              />
+              <input
+                type="text"
+                placeholder="State"
+                value={address.state}
+                onChange={(e) => handleAddressChange('state', e.target.value)}
+                className="col-span-1 bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 text-sm font-medium focus:bg-white focus:border-slate-100 transition-all outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Pincode"
+                value={address.pincode}
+                onChange={(e) => handleAddressChange('pincode', e.target.value)}
+                className="col-span-1 bg-slate-50 border-2 border-transparent rounded-2xl py-4 px-6 text-sm font-medium focus:bg-white focus:border-slate-100 transition-all outline-none"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Right: Summary */}

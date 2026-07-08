@@ -27,6 +27,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     // --- PRODUCT & INVENTORY ---
     { name: 'Products', icon: <Package size={18} />, path: '/admin/products' },
+    { name: 'Product bulk upload', icon: <ImageIcon size={18} />, path: '/admin/bulk-upload' },
 
     // --- OTHER LINKS ---
     { name: 'Orders', icon: <BookOpen size={18} />, path: '/admin/orders' },
